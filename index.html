@@ -78,49 +78,64 @@ code{font-family:"JetBrains Mono",monospace;font-size:12.5px;background:#21262D;
 .spin.busy{background:#E3B341;animation:p 1s infinite}
 .spin.err{background:#F85149}
 @keyframes p{50%{opacity:.3}}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.filters .in{min-height:38px;padding:7px 10px;font-size:13px;width:auto}
+.fchip{border:1px solid transparent;cursor:pointer}
+.fchip.off{opacity:.45}
+.sel{background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:13px Inter,sans-serif;padding:7px 8px;min-height:36px}
+.syscards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;width:100%}
+.syscard{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.syscard:hover{border-color:var(--accent)}
+.stat{display:flex;align-items:center;gap:8px;font-size:13px}
+.notes{display:flex;flex-direction:column;gap:10px}
+.note-item{padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:13px;line-height:1.5}
+.note-item .when{color:var(--muted);font-size:11px;font-family:"JetBrains Mono",monospace;display:block;margin-bottom:2px}
+.full{flex:1 1 100%}
 </style>
 </head>
 <body>
 <header>
   <div style="display:flex;align-items:center;gap:22px;flex-wrap:wrap">
     <div class="brand"><span class="dot"></span><b style="letter-spacing:.04em">AI LIFE</b><span class="muted">Panel</span></div>
-    <nav class="nav" aria-label="Ekranlar">
-      <button data-a="view" data-v="emirler" id="nav-emirler" class="on">Emirler</button>
-      <button data-a="view" data-v="tanimlar" id="nav-tanimlar">Tanımlar</button>
-    </nav>
+    <nav class="nav" id="nav" aria-label="Ekranlar"></nav>
   </div>
   <div class="chips">
-    <div id="chips" class="chips"></div>
-    <div class="chip" id="runner" title="Runner durumu"><span class="dot" style="width:8px;height:8px;background:#6E7681"></span><span class="muted">Runner: —</span></div>
+    <label class="sync" title="Panelin repoyu kontrol etme aralığı">Senkron
+      <select class="sel" id="syncsel" aria-label="Senkron aralığı">
+        <option value="0">Kapalı</option><option value="10">10 sn</option><option value="15">15 sn</option><option value="30">30 sn</option><option value="60">1 dk</option><option value="300">5 dk</option>
+      </select>
+    </label>
     <div class="sync"><span id="syncdot" class="spin"></span><span id="synctext">Bağlanmadı</span></div>
     <button class="iconbtn" data-a="refresh" aria-label="Şimdi yenile" title="Şimdi yenile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
-    <button class="iconbtn" data-a="settings" aria-label="Bağlantı ayarları" title="Bağlantı ayarları"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg></button>
+    <button class="iconbtn" data-a="settings" aria-label="Bağlantı ayarları" title="Token’ı sil (iki kez tıkla)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg></button>
   </div>
 </header>
 <main id="app"></main>
 <div id="modal"></div>
 <div id="toast" aria-live="polite"></div>
-
 <script>
 const REPO = 'sapoguzhanaydemir-ux/ai-life-kopru';
 const BRANCH = 'main';
-const POLL_MS = 15000;
 const TANIM_FILES = [
   ['emir-turleri','Emir türleri','Ajan davranışı “Onay gerekli” ve “Yazma izni” bayraklarından okunur.'],
   ['nesne-tipleri','Nesne tipleri','ADT karşılığı, ajanın nesneyi bulmak için kullandığı tiptir.'],
   ['durumlar','Durumlar','Sıra akıştaki yeri, “Bitiş” emrin kapandığını belirtir.'],
   ['oncelikler','Öncelikler','Ajan emirleri önce bu sıraya, sonra son tarihe göre işler.'],
   ['request-tercihleri','Request tercihleri','Sadece yazma izni olan emir türlerinde sorulur.'],
-  ['musteriler','Müşteriler / Sistemler','Köprü yöntemi burada tanımlanır, emirde seçilmez.']
+  ['musteriler','Müşteriler / Sistemler','Yürütücü (Açık/Kapalı) ve kontrol aralığı sistem ekranından da değiştirilebilir.']
 ];
 const RENK = {'Gri':'#9DA7B3','Mavi':'#58A6FF','Sarı':'#E3B341','Turuncu':'#F0883E','Yeşil':'#3FB950','Kırmızı':'#F85149'};
+const ARALIKLAR = [15, 30, 60, 120, 300];
 
 const S = {
   token: load('ailife_token') || '',
-  view: 'emirler', sel: null, form: false, draft: {}, tab: 'emir-turleri', editRow: -1,
-  head: null, tanim: {}, tanimRaw: {}, orders: [], results: {}, ekler: {},
-  blobCache: {}, busy: false, last: null, err: null, runner: null, queued: 0
+  sync: parseInt(load('ailife_sync') || '30', 10),
+  view: load('ailife_view') || 'genel', sel: null, form: false, draft: {}, tab: 'emir-turleri', editRow: -1,
+  head: null, tanim: {}, tanimRaw: {}, orders: [], results: {}, ekler: {}, notes: {}, notesRaw: {}, makine: {}, durum: {},
+  blobCache: {}, busy: false, last: null, err: null,
+  f: { q: '', durum: [], mus: '', tur: '' }, nd: {}
 };
+let timer = null;
 
 function load(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
 function save(k,v){ try { v===null ? localStorage.removeItem(k) : localStorage.setItem(k,v); } catch(e){} }
@@ -129,6 +144,9 @@ function inline(s){ return esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replac
 function b64enc(s){ return btoa(unescape(encodeURIComponent(s))); }
 function toast(msg, err){ const t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=msg; document.getElementById('toast').appendChild(t); setTimeout(()=>t.remove(), err?7000:3500); }
 function pathEnc(p){ return p.split('/').map(encodeURIComponent).join('/'); }
+function label(m){ return String(m).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/ı/g,'i').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''); }
+function now(){ const d = new Date(), p = n => String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); }
+function ago(iso){ const s = Math.round((Date.now() - new Date(iso).getTime())/1000); if (isNaN(s)) return '—'; if (s < 60) return s+' sn önce'; if (s < 3600) return Math.round(s/60)+' dk önce'; if (s < 86400) return Math.round(s/3600)+' sa önce'; return Math.round(s/86400)+' gün önce'; }
 
 // ---------- GitHub API ----------
 async function gh(path, opts){
@@ -140,7 +158,6 @@ async function gh(path, opts){
     cache: 'no-store'
   });
   if (r.status === 404 && opts.allow404) return null;
-  if ((r.status === 403 || r.status === 404) && opts.soft) return { __denied: true };
   if (!r.ok) {
     let m = ''; try { m = (await r.json()).message; } catch(e){}
     const e = new Error(r.status === 401 ? 'Token geçersiz ya da süresi dolmuş' : r.status === 403 ? 'Yetki yok: ' + m : r.status === 409 ? 'Çakışma: dosya bu sırada değişti, tekrar dene' : (r.status + ' ' + m));
@@ -148,9 +165,10 @@ async function gh(path, opts){
   }
   return opts.raw ? r.text() : r.json();
 }
+const RAW = { 'Accept': 'application/vnd.github.raw' };
 async function blobText(path, sha){
   if (S.blobCache[sha] != null) return S.blobCache[sha];
-  const t = await gh('/contents/' + pathEnc(path) + '?ref=' + S.head, { headers: { 'Accept': 'application/vnd.github.raw' }, raw: true });
+  const t = await gh('/contents/' + pathEnc(path) + '?ref=' + S.head, { headers: RAW, raw: true });
   S.blobCache[sha] = t; return t;
 }
 async function listDir(path){ return (await gh('/contents/' + pathEnc(path) + '?ref=' + S.head, { allow404: true })) || []; }
@@ -160,7 +178,7 @@ async function putFile(path, content, message, sha){
   return gh('/contents/' + pathEnc(path), { method: 'PUT', body: body });
 }
 
-// ---------- Markdown parse ----------
+// ---------- Markdown ----------
 function rows(md){
   return md.split('\n').map(l => l.trim()).filter(l => l.startsWith('|'))
     .map(l => l.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim()))
@@ -170,19 +188,17 @@ function parseTanim(md){
   const r = rows(md); if (!r.length) return { title: '', head: [], data: [] };
   const title = (md.split('\n').find(l => l.startsWith('# ')) || '# ').slice(2).trim();
   const head = r[0];
-  return { title: title, head: head, data: r.slice(1).map(c => { const o = {}; head.forEach((h,i) => o[h] = c[i] == null ? '' : c[i]); return o; }) };
+  return { title, head, data: r.slice(1).map(c => { const o = {}; head.forEach((h,i) => o[h] = c[i] == null ? '' : c[i]); return o; }) };
 }
 function tanimMd(t){
   const line = a => '| ' + a.map(x => String(x).replace(/\|/g,'/')).join(' | ') + ' |';
   return '# ' + t.title + '\n\n' + line(t.head) + '\n' + '|' + t.head.map(()=>'---').join('|') + '|\n' + t.data.map(o => line(t.head.map(h => o[h] || ''))).join('\n') + '\n';
 }
+function kvRows(md){ const o = {}; rows(md).forEach(r => { if (r[0] && r[0] !== 'Alan') o[r[0]] = (r[1] || '').trim(); }); return o; }
 function parseOrder(md){
-  const o = { f: {} };
-  rows(md).forEach(r => { if (r[0] && r[0] !== 'Alan') o.f[r[0]] = (r[1] || '').trim(); });
   const p = md.split(/^## Plan\s*$/m)[1] || '';
-  o.plan = p.split('\n').map(l => l.trim()).filter(Boolean).map(l => l.replace(/^(\d+[.)]|[-*])\s*/, ''));
-  o.id = (md.match(/^# (.+)$/m) || [,''])[1].trim();
-  return o;
+  return { f: kvRows(md), id: (md.match(/^# (.+)$/m) || [,''])[1].trim(),
+    plan: p.split('\n').map(l => l.trim()).filter(Boolean).map(l => l.replace(/^(\d+[.)]|[-*])\s*/, '')) };
 }
 function parseResult(md){
   const r = { yapilan: [] }; let inY = false;
@@ -196,6 +212,7 @@ function parseResult(md){
   if (r.sonraki && /^[—\-–\s]*$/.test(r.sonraki)) r.sonraki = '';
   return r;
 }
+function parseNotes(md){ return md.split('\n').map(l => l.match(/^- (\d{4}-\d\d-\d\d \d\d:\d\d) · (.*)$/)).filter(Boolean).map(m => ({ when: m[1], text: m[2] })); }
 function orderMd(id, f){
   const v = x => String(x == null || x === '' ? '—' : x).replace(/\|/g,'/').replace(/\n/g,' ');
   return '# ' + id + '\n\n## Alanlar\n| Alan | Değer |\n|---|---|\n' +
@@ -206,83 +223,90 @@ function orderMd(id, f){
 // ---------- Tanım yardımcıları ----------
 const T = n => (S.tanim[n] && S.tanim[n].data) || [];
 const aktif = o => !('Aktif' in o) || o.Aktif !== 'Hayır';
-function turOf(kod){ return T('emir-turleri').find(t => t.Kod === kod) || {}; }
-function durumOf(ad){ return T('durumlar').find(d => d['Açıklama'] === ad) || {}; }
-function renk(ad){ return RENK[durumOf(ad).Renk] || '#9DA7B3'; }
-function pill(ad, label){ const c = renk(ad); return '<span class="pill" style="color:'+c+';background:'+c+'24">'+esc(label || ad || '—')+'</span>'; }
+const turOf = kod => T('emir-turleri').find(t => t.Kod === kod) || {};
+const durumOf = ad => T('durumlar').find(d => d['Açıklama'] === ad) || {};
+const musOf = m => T('musteriler').find(x => x['Müşteri'] === m) || {};
+const renk = ad => RENK[durumOf(ad).Renk] || '#9DA7B3';
+function pill(ad, lab, extra){ const c = renk(ad); return '<span class="pill'+(extra||'')+'" style="color:'+c+';background:'+c+'24">'+esc(lab || ad || '—')+'</span>'; }
+
+function yurutucuDurumu(m){
+  const mu = musOf(m), d = S.durum[m];
+  if (mu['Yürütücü'] === 'Kapalı' || !aktif(mu)) return { c: '#6E7681', t: 'Devre dışı' };
+  if (!d) return { c: '#6E7681', t: 'Sinyal yok' };
+  const age = (Date.now() - new Date(d.zaman).getTime()) / 1000, lim = Math.max(300, 3 * (d.aralik || 60));
+  if (age > lim) return { c: '#F85149', t: 'Çevrimdışı · ' + ago(d.zaman) };
+  if (d.calisiyor) return { c: '#E3B341', t: 'Çalışıyor' };
+  return { c: '#3FB950', t: 'Çevrimiçi' };
+}
+function dot(c){ return '<span class="dot" style="width:8px;height:8px;background:'+c+'"></span>'; }
 
 // ---------- Senkron ----------
 async function sync(force){
   if (!S.token || S.busy) return;
   S.busy = true; setSync('busy');
   try {
-    const [c] = await Promise.all([gh('/commits/' + BRANCH), runnerStatus()]);
-    if (!force && c.sha === S.head) { S.last = new Date(); setSync('ok'); return; }
-    S.head = c.sha;
-    const [tdir, edir, sdir] = await Promise.all([listDir('tanimlar'), listDir('emirler'), listDir('sonuclar')]);
-    await Promise.all(TANIM_FILES.map(async ([n]) => {
-      const e = tdir.find(x => x.name === n + '.md'); if (!e) return;
-      S.tanimRaw[n] = e; S.tanim[n] = parseTanim(await blobText(e.path, e.sha));
+    const c = await gh('/commits/' + BRANCH);
+    const changed = force || c.sha !== S.head;
+    if (changed) {
+      S.head = c.sha;
+      const [tdir, edir, sdir, ndir, mdir] = await Promise.all(['tanimlar','emirler','sonuclar','notlar','makine'].map(listDir));
+      await Promise.all(TANIM_FILES.map(async ([n]) => {
+        const e = tdir.find(x => x.name === n + '.md'); if (!e) return;
+        S.tanimRaw[n] = e; S.tanim[n] = parseTanim(await blobText(e.path, e.sha));
+      }));
+      const of = edir.filter(e => e.type === 'file' && /\.md$/.test(e.name) && !e.name.startsWith('_'));
+      S.orders = await Promise.all(of.map(async e => { const o = parseOrder(await blobText(e.path, e.sha)); o.id = o.id || e.name.replace(/\.md$/,''); o.path = e.path; o.sha = e.sha; return o; }));
+      S.orders.sort((a,b) => b.id.localeCompare(a.id, 'tr', { numeric: true }));
+      S.results = {}; S.ekler = {}; S.notes = {}; S.notesRaw = {}; S.makine = {};
+      await Promise.all(sdir.map(async e => {
+        if (e.name.startsWith('_')) return;
+        if (e.type === 'file' && /\.md$/.test(e.name)) S.results[e.name.replace(/\.md$/,'')] = parseResult(await blobText(e.path, e.sha));
+        else if (e.type === 'dir') S.ekler[e.name] = (await listDir(e.path)).filter(x => x.type === 'file');
+      }));
+      await Promise.all(ndir.filter(e => e.type === 'file' && /\.md$/.test(e.name) && e.name !== 'README.md').map(async e => {
+        const k = e.name.replace(/\.md$/,''); S.notesRaw[k] = e; S.notes[k] = parseNotes(await blobText(e.path, e.sha));
+      }));
+      await Promise.all(mdir.filter(e => /\.md$/.test(e.name)).map(async e => { S.makine[e.name.replace(/\.md$/,'')] = kvRows(await blobText(e.path, e.sha)); }));
+      if (S.sel && !S.orders.find(o => o.id === S.sel)) S.sel = null;
+    }
+    await Promise.all(T('musteriler').map(async m => {
+      const name = m['Müşteri'];
+      try { const t = await gh('/contents/durum.json?ref=durum-' + label(name), { headers: RAW, raw: true, allow404: true }); S.durum[name] = t ? JSON.parse(String(t).replace(/^\uFEFF/, '')) : null; }
+      catch (e) { if (e.status === 401) throw e; S.durum[name] = null; }
     }));
-    const of = edir.filter(e => e.type === 'file' && /\.md$/.test(e.name) && !e.name.startsWith('_'));
-    S.orders = await Promise.all(of.map(async e => { const o = parseOrder(await blobText(e.path, e.sha)); o.id = o.id || e.name.replace(/\.md$/,''); o.path = e.path; o.sha = e.sha; return o; }));
-    S.orders.sort((a,b) => b.id.localeCompare(a.id, 'tr', { numeric: true }));
-    S.results = {}; S.ekler = {};
-    await Promise.all(sdir.map(async e => {
-      if (e.name.startsWith('_')) return;
-      if (e.type === 'file' && /\.md$/.test(e.name)) S.results[e.name.replace(/\.md$/,'')] = parseResult(await blobText(e.path, e.sha));
-      else if (e.type === 'dir') S.ekler[e.name] = (await listDir(e.path)).filter(x => x.type === 'file');
-    }));
-    if (S.sel && !S.orders.find(o => o.id === S.sel)) S.sel = null;
     S.err = null; S.last = new Date(); setSync('ok'); render();
   } catch (e) {
     S.err = e.message; setSync('err'); if (force) toast(e.message, true);
     if (e.status === 401) render();
   } finally { S.busy = false; }
 }
-async function runnerStatus(){
-  try {
-    const [rn, q] = await Promise.all([
-      gh('/actions/runners', { soft: true }),
-      gh('/actions/runs?status=queued&per_page=10', { soft: true })
-    ]);
-    const prev = JSON.stringify([S.runner, S.queued]);
-    if (rn.__denied) S.runner = { denied: true };
-    else { const r = (rn.runners || []).find(x => x.name === 'TGS') || (rn.runners || [])[0]; S.runner = r ? { online: r.status === 'online', busy: r.busy } : { none: true }; }
-    S.queued = q.__denied ? null : (q.total_count || 0);
-    paintRunner();
-    if (prev !== JSON.stringify([S.runner, S.queued]) && S.head) render();
-  } catch (e) { S.runner = { err: true }; paintRunner(); }
-}
-function paintRunner(){
-  const r = S.runner || {}, el = document.getElementById('runner');
-  let c = '#6E7681', t = 'Runner: —';
-  if (r.denied) t = 'Runner: izin yok';
-  else if (r.none) t = 'Runner: kayıtlı değil';
-  else if (r.err) t = 'Runner: okunamadı';
-  else if (r.online) { c = r.busy ? '#E3B341' : '#3FB950'; t = r.busy ? 'Runner: çalışıyor' : 'Runner: çevrimiçi'; }
-  else if ('online' in r) { c = '#F85149'; t = 'Runner: kapalı'; }
-  if (S.queued) t += ' · kuyrukta ' + S.queued;
-  el.innerHTML = '<span class="dot" style="width:8px;height:8px;background:'+c+'"></span><span'+(c==='#6E7681'?' class="muted"':'')+'>'+esc(t)+'</span>';
-  el.title = r.denied ? 'Token’a Administration: Read ve Actions: Read izinleri gerekli' : 'Runner durumu';
-}
 function setSync(st){
   const d = document.getElementById('syncdot'), t = document.getElementById('synctext');
   d.className = 'spin' + (st === 'busy' ? ' busy' : st === 'err' ? ' err' : '');
   if (st === 'err') t.textContent = 'Hata: ' + S.err;
   else if (st === 'busy') t.textContent = 'Senkronize ediliyor…';
-  else t.textContent = 'Canlı · ' + S.last.toLocaleTimeString('tr-TR');
+  else t.textContent = (S.sync ? 'Canlı' : 'Elle') + ' · ' + S.last.toLocaleTimeString('tr-TR');
+}
+function armTimer(){
+  if (timer) clearInterval(timer); timer = null;
+  if (S.sync > 0) timer = setInterval(() => { if (!document.hidden) sync(false); }, S.sync * 1000);
 }
 
 // ---------- Görünümler ----------
 function render(){
-  document.getElementById('nav-emirler').className = S.view === 'emirler' ? 'on' : '';
-  document.getElementById('nav-tanimlar').className = S.view === 'tanimlar' ? 'on' : '';
-  document.getElementById('chips').innerHTML = T('musteriler').map(m => '<div class="chip'+(aktif(m)?'':' off')+'"><span class="dot" style="width:8px;height:8px;background:'+(aktif(m)?'#3FB950':'#6E7681')+'"></span><b>'+esc(m['Müşteri'])+'</b><span class="muted" style="font-size:12px">'+esc(m['Köprü'])+(m.SID && m.SID!=='—' ? ' · '+esc(m.SID)+'/'+esc(m.Client) : '')+'</span></div>').join('');
+  const nav = [['genel','Genel']].concat(T('musteriler').map(m => ['sys:' + m['Müşteri'], m['Müşteri'], !aktif(m)])).concat([['tanimlar','Tanımlar']]);
+  document.getElementById('nav').innerHTML = nav.map(([v,l,off]) => {
+    const st = v.startsWith('sys:') ? yurutucuDurumu(v.slice(4)) : null;
+    return '<button data-a="view" data-v="'+esc(v)+'" class="'+(S.view===v?'on':'')+'" style="display:flex;align-items:center;gap:8px'+(off?';opacity:.55':'')+'">'+(st?dot(st.c):'')+esc(l)+'</button>';
+  }).join('');
   const app = document.getElementById('app');
-  if (!S.token) { app.innerHTML = setupHtml(); return; }
-  if (!S.head) { app.innerHTML = '<div class="empty" style="flex:1">Yükleniyor…</div>'; return; }
-  app.innerHTML = S.view === 'emirler' ? emirlerHtml() : tanimlarHtml();
+  const act = document.activeElement, actId = act && act.id, caret = act && act.selectionStart;
+  if (!S.token) app.innerHTML = setupHtml();
+  else if (!S.head) app.innerHTML = '<div class="empty" style="flex:1">Yükleniyor…</div>';
+  else if (S.view === 'tanimlar') app.innerHTML = tanimlarHtml();
+  else if (S.view.startsWith('sys:')) app.innerHTML = sistemHtml(S.view.slice(4));
+  else app.innerHTML = genelHtml();
+  if (actId) { const el = document.getElementById(actId); if (el) { el.focus(); try { el.setSelectionRange(caret, caret); } catch(e){} } }
 }
 
 function setupHtml(){
@@ -293,23 +317,79 @@ function setupHtml(){
     '<div style="display:flex;gap:12px;justify-content:flex-end"><button class="btn" data-a="savetok">Bağlan</button></div></div>';
 }
 
-function emirlerHtml(){
-  const durs = T('durumlar').filter(aktif);
-  const counts = durs.map(d => [d['Açıklama'], S.orders.filter(o => o.f.Durum === d['Açıklama']).length]).filter(x => x[1] > 0);
-  let left = '<section class="left"><div style="display:flex;justify-content:space-between;align-items:center"><h2>İş emirleri</h2>' +
+function sysCards(){
+  return '<div class="syscards">' + T('musteriler').map(m => {
+    const n = m['Müşteri'], st = yurutucuDurumu(n), os = S.orders.filter(o => o.f['Müşteri'] === n);
+    const bek = os.filter(o => o.f.Durum === 'Verildi' || o.f.Durum === 'Onay bekliyor').length, d = S.durum[n];
+    return '<button class="syscard" data-a="view" data-v="sys:'+esc(n)+'"'+(aktif(m)?'':' style="opacity:.55"')+'><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16px">'+esc(n)+'</b><span class="mono muted" style="font-size:12px">'+esc(m.SID)+' / '+esc(m.Client)+'</span></div>' +
+      '<div class="stat">'+dot(st.c)+'<span>Yürütücü: '+esc(st.t)+'</span></div>' +
+      '<div class="stat">'+dot(d ? (d.adt ? '#3FB950' : '#F85149') : '#6E7681')+'<span>SAP (ADT): '+(d ? (d.adt ? 'erişilebilir' : 'erişilemiyor') : '—')+'</span></div>' +
+      '<div class="muted" style="font-size:12px">'+os.length+' emir · '+bek+' bekleyen'+(S.notes[n] && S.notes[n].length ? ' · '+S.notes[n].length+' not' : '')+'</div></button>';
+  }).join('') + '</div>';
+}
+
+function filtered(sys){
+  const f = S.f, q = f.q.trim().toLocaleLowerCase('tr');
+  return S.orders.filter(o => (!sys || o.f['Müşteri'] === sys) && (!f.durum.length || f.durum.includes(o.f.Durum)) && (sys || !f.mus || o.f['Müşteri'] === f.mus) && (!f.tur || o.f['Emir türü'] === f.tur) &&
+    (!q || [o.id, o.f['Nesne adı'], o.f.Talimat, o.f['Nesne tipi']].join(' ').toLocaleLowerCase('tr').includes(q)));
+}
+function listHtml(sys){
+  const base = S.orders.filter(o => !sys || o.f['Müşteri'] === sys);
+  const durs = T('durumlar').filter(aktif).map(d => d['Açıklama']).filter(d => base.some(o => o.f.Durum === d));
+  const list = filtered(sys), any = S.f.q || S.f.durum.length || (!sys && S.f.mus) || S.f.tur;
+  let h = '<section class="left"><div style="display:flex;justify-content:space-between;align-items:center"><h2>İş emirleri</h2>' +
     '<button class="btn" data-a="new" style="display:flex;align-items:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Yeni emir</button></div>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap">' + counts.map(([d,n]) => pill(d, d + ' · ' + n)).join('') + '</div><div style="display:flex;flex-direction:column;gap:8px">';
-  if (!S.orders.length) left += '<div class="empty">Henüz emir yok</div>';
-  S.orders.forEach(o => {
-    const on = o.id === S.sel && !S.form;
-    left += '<button class="row'+(on?' on':'')+'" data-a="sel" data-id="'+esc(o.id)+'"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="mono muted" style="font-size:13px">'+esc(o.id)+'</span>'+pill(o.f.Durum)+'</div>' +
-      '<div style="font-weight:600;font-size:15px">'+esc(o.f['Nesne adı'])+' <span class="muted" style="font-weight:400">· '+esc((turOf(o.f['Emir türü'])['Açıklama']) || o.f['Emir türü'])+'</span></div><div class="t">'+esc(o.f.Talimat)+'</div></button>';
+    '<div class="filters"><input class="in" id="q" data-fq="1" placeholder="Ara: emir no, nesne, talimat" value="'+esc(S.f.q)+'" style="flex:1 1 180px">' +
+    (sys ? '' : '<select class="sel" data-ff="mus" aria-label="Müşteri filtresi"><option value="">Tüm sistemler</option>'+T('musteriler').map(m => '<option'+(S.f.mus===m['Müşteri']?' selected':'')+'>'+esc(m['Müşteri'])+'</option>').join('')+'</select>') +
+    '<select class="sel" data-ff="tur" aria-label="Tür filtresi"><option value="">Tüm türler</option>'+T('emir-turleri').map(t => '<option value="'+esc(t.Kod)+'"'+(S.f.tur===t.Kod?' selected':'')+'>'+esc(t['Açıklama'])+'</option>').join('')+'</select></div>' +
+    '<div class="filters">' + durs.map(d => { const n = base.filter(o => o.f.Durum === d).length, on = !S.f.durum.length || S.f.durum.includes(d);
+      return '<button class="pill fchip'+(on?'':' off')+'" data-a="fdurum" data-v="'+esc(d)+'" aria-pressed="'+(S.f.durum.includes(d))+'" style="color:'+renk(d)+';background:'+renk(d)+'24">'+esc(d)+' · '+n+'</button>'; }).join('') +
+    (any ? '<button class="btn ghost" style="min-height:30px;padding:0 10px;font-size:12px" data-a="fclear">Filtreleri temizle</button>' : '') + '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px">';
+  if (!list.length) h += '<div class="empty">'+(base.length ? 'Filtreye uyan emir yok' : 'Henüz emir yok')+'</div>';
+  list.forEach(o => {
+    const on = o.id === S.sel && !S.form, nn = (S.notes[o.id] || []).length;
+    h += '<button class="row'+(on?' on':'')+'" data-a="sel" data-id="'+esc(o.id)+'"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="mono muted" style="font-size:13px">'+esc(o.id)+(nn?' · ✎'+nn:'')+'</span>'+pill(o.f.Durum)+'</div>' +
+      '<div style="font-weight:600;font-size:15px">'+esc(o.f['Nesne adı'])+' <span class="muted" style="font-weight:400">· '+esc(turOf(o.f['Emir türü'])['Açıklama'] || o.f['Emir türü'])+'</span></div><div class="t">'+esc(o.f.Talimat)+'</div></button>';
   });
-  left += '</div></section>';
-  let right = '<section class="right">';
-  if (S.form) right += formHtml();
-  else { const o = S.orders.find(x => x.id === S.sel) || S.orders[0]; if (o) { S.sel = o.id; right += detailHtml(o); } else right += '<div class="empty">Soldan bir emir seç ya da yeni emir ver</div>'; }
-  return left + right + '</section>';
+  return h + '</div></section>';
+}
+function rightHtml(sys){
+  let h = '<section class="right">';
+  if (S.form) return h + formHtml(sys) + '</section>';
+  const list = filtered(sys), o = list.find(x => x.id === S.sel) || list[0];
+  if (o) { S.sel = o.id; h += detailHtml(o); } else h += '<div class="empty">Soldan bir emir seç ya da yeni emir ver</div>';
+  return h + '</section>';
+}
+function genelHtml(){ return sysCards() + listHtml(null) + rightHtml(null); }
+
+function sistemHtml(n){
+  const m = musOf(n), mk = S.makine[n] || {}, d = S.durum[n], st = yurutucuDurumu(n), acik = m['Yürütücü'] !== 'Kapalı';
+  const ar = parseInt(m['Aralık (sn)'], 10) || 60;
+  let h = '<div class="card full" style="display:flex;flex-direction:column;gap:18px">' +
+    '<div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start"><div style="display:flex;flex-direction:column;gap:6px"><h2 style="font-size:24px">'+esc(n)+'</h2>' +
+    '<span class="mono muted" style="font-size:13px">'+esc(m.SID)+' / '+esc(m.Client)+' · '+esc(mk['ADT destination'] || '—')+' · Köprü: '+esc(m['Köprü'])+'</span></div>' +
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label class="sync">Yürütücü <button class="tog '+(acik?'a':'p')+'" data-a="ytog">'+(acik?'Açık':'Kapalı')+'</button></label>' +
+    '<label class="sync">Kontrol aralığı <select class="sel" data-a2="aralik">'+ARALIKLAR.concat(ARALIKLAR.includes(ar)?[]:[ar]).map(s => '<option value="'+s+'"'+(s===ar?' selected':'')+'>'+(s<60?s+' sn':(s/60)+' dk')+'</option>').join('')+'</select></label></div></div>' +
+    '<div class="grid4">' +
+      '<div class="kv"><span>Yürütücü</span><span class="stat">'+dot(st.c)+esc(st.t)+'</span></div>' +
+      '<div class="kv"><span>SAP (ADT)</span><span class="stat">'+dot(d ? (d.adt ? '#3FB950' : '#F85149') : '#6E7681')+(d ? (d.adt ? 'Erişilebilir' : 'Erişilemiyor (VS Code açık mı?)') : '—')+'</span></div>' +
+      '<div class="kv"><span>Son sinyal</span><span>'+(d ? esc(ago(d.zaman)) : '—')+'</span></div>' +
+      '<div class="kv"><span>Yürütücü sürümü</span><span class="mono">'+(d ? esc(d.surum) : '—')+'</span></div></div>';
+  if (d && d.sonHata) h += '<div class="note" style="background:rgba(248,81,73,.12);color:#FF7B72">Son hata: '+esc(d.sonHata)+'</div>';
+  if (d && d.sonIs) h += '<div class="log mono"><div><span class="k">Son iş</span>'+esc(ago(d.sonIs.zaman))+' · '+esc(d.sonIs.emir)+' emir</div><div><span class="k">Özet</span>'+inline(d.sonIs.ozet || '')+'</div></div>';
+  if (!d && acik) h += '<div class="muted" style="font-size:13px">Bu sistemden henüz sinyal gelmedi. Makinede yürütücü kurulu mu? (<code>yurutucu/kur.ps1 -Makine '+esc(n)+'</code>)</div>';
+  h += '</div>';
+  h += listHtml(n) + rightHtml(n);
+  h += '<div class="card full">' + notesHtml(n, 'Sistem notları') + '</div>';
+  return h;
+}
+
+function notesHtml(key, title){
+  const ns = (S.notes[key] || []).slice().reverse();
+  return '<div class="notes"><div style="display:flex;justify-content:space-between;align-items:center"><b>'+esc(title)+'</b><span class="muted" style="font-size:12px">'+ns.length+' not</span></div>' +
+    '<div style="display:flex;gap:8px"><textarea class="in" rows="2" id="note-'+esc(key)+'" data-nk="'+esc(key)+'" placeholder="Not ekle…" style="flex:1">'+esc(S.nd[key]||'')+'</textarea><button class="btn" data-a="addnote" data-k="'+esc(key)+'">Ekle</button></div>' +
+    ns.map(x => '<div class="note-item"><span class="when">'+esc(x.when)+'</span>'+inline(x.text)+'</div>').join('') + '</div>';
 }
 
 function detailHtml(o){
@@ -323,19 +403,19 @@ function detailHtml(o){
     const col = i < cur ? 'var(--accent)' : i === cur ? renk(l) : 'var(--line)';
     return '<div class="step"><span class="sdot" style="background:'+col+(i===cur?';box-shadow:0 0 0 4px '+renk(l)+'30':'')+'"></span><span style="font-size:13px;font-weight:'+(i===cur?600:400)+';color:'+(i<=cur?'var(--text)':'var(--dim)')+'">'+esc(l)+'</span>'+(i<labels.length-1?'<span class="sline" style="background:'+(i<cur?'var(--accent)':'var(--line)')+'"></span>':'')+'</div>';
   }).join('');
-  const r = S.results[o.id], ek = S.ekler[o.id] || [];
+  const r = S.results[o.id], ek = S.ekler[o.id] || [], onc = (T('oncelikler').find(x => x.Kod === f['Öncelik']) || {})['Açıklama'] || f['Öncelik'];
   let h = '<div class="card" style="display:flex;flex-direction:column;gap:20px">' +
     '<div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start"><div style="display:flex;flex-direction:column;gap:6px"><span class="mono muted" style="font-size:13px">'+esc(o.id)+' · '+esc(f['Müşteri'])+' · '+esc(f['Sistem / Client'])+'</span>' +
     '<h2 style="font-size:22px">'+esc(f['Nesne adı'])+' <span class="muted" style="font-weight:400;font-size:15px">'+esc(f['Nesne tipi'])+'</span></h2></div>'+pill(f.Durum)+'</div>' +
     '<div class="steps">'+steps+'</div>' +
-    '<div class="grid4">' + [['Emir türü', tur['Açıklama'] || f['Emir türü']],['Öncelik', (T('oncelikler').find(x => x.Kod === f['Öncelik']) || {})['Açıklama'] || f['Öncelik']],['Request tercihi', f['Request tercihi']],['Son tarih', f['Son tarih']]].map(kv).join('') +
+    '<div class="grid4">' + [['Emir türü', tur['Açıklama'] || f['Emir türü']],['Öncelik', onc],['Request tercihi', f['Request tercihi']],['Son tarih', f['Son tarih']]].map(kv).join('') +
     '<div class="kv" style="grid-column:span 2"><span>Talimat</span><span>'+esc(f.Talimat)+'</span></div>' + kv(['Beklenen çıktı', f['Beklenen çıktı']]) +
     '<div class="kv"><span>Alındı / Bitti</span><span class="mono">'+esc(f['Alındı']||'—')+' / '+esc(f.Bitti||'—')+'</span></div></div>';
   if (f.Durum === 'Onay bekliyor' || (o.plan.length && needOnay)) {
     h += '<div class="plan"><b style="color:#F0A86E">Ajanın planı'+(f.Onay ? '' : ' · onayını bekliyor')+'</b>' +
       (o.plan.length ? '<ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px">'+o.plan.map(p => '<li>'+inline(p)+'</li>').join('')+'</ol>' : '<span class="muted">Plan henüz yazılmadı.</span>');
     if (f.Durum === 'Onay bekliyor' && !f.Onay) h += '<div style="display:flex;gap:12px"><button class="btn ok" data-a="onay" data-v="Evet">Onayla</button><button class="btn no" data-a="onay" data-v="Hayır">Reddet</button></div>';
-    else if (f.Onay) h += '<div class="mono" style="font-size:13px">Onay: '+esc(f.Onay)+(f.Durum === 'Onay bekliyor' ? ' · ajan otomatik devam edecek' : '')+'</div>';
+    else if (f.Onay) h += '<div class="mono" style="font-size:13px">Onay: '+esc(f.Onay)+(f.Durum === 'Onay bekliyor' ? ' · yürütücü bir sonraki kontrolde devam edecek' : '')+'</div>';
     h += '</div>';
   }
   if (r) {
@@ -344,16 +424,16 @@ function detailHtml(o){
       '<div><span class="k">Sonuç</span><span style="font-weight:500;color:'+(f.Durum === 'Hata' ? '#FF7B72' : '#56D364')+'">'+inline(r.sonuc||'')+'</span></div>' +
       (r.sonraki ? '<div><span class="k">Sonraki</span>'+inline(r.sonraki)+'</div>' : '') + '</div>';
   } else if (f.Durum === 'Verildi') {
-    const r = S.runner || {};
-    if ('online' in r && !r.online) h += '<div class="note" style="background:rgba(248,81,73,.12);color:#FF7B72">Runner kapalı. Emir kuyrukta bekliyor; TGS’de runner açılınca otomatik işlenecek (24 saat içinde).</div>';
-    else h += '<div class="muted" style="font-size:13px">Runner emri birazdan alacak.</div>';
+    const st = yurutucuDurumu(f['Müşteri']);
+    h += '<div class="stat muted">'+dot(st.c)+'<span>'+esc(f['Müşteri'])+' yürütücüsü: '+esc(st.t)+(st.t === 'Çevrimiçi' ? ' · bir sonraki kontrolde alınacak' : ' · emir sırada bekliyor')+'</span></div>';
   }
   if (ek.length) h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="muted" style="font-size:12px">Ekler</span>' + ek.map(e => '<span class="ek mono">'+esc(e.name)+' <button data-a="ek" data-p="'+esc(e.path)+'" data-s="'+esc(e.sha)+'">Görüntüle</button><a href="'+esc(e.html_url)+'" target="_blank" rel="noopener">GitHub</a></span>').join('') + '</div>';
+  h += '<div style="border-top:1px solid var(--line);padding-top:16px">' + notesHtml(o.id, 'Emir notları') + '</div>';
   return h + '</div>';
 }
 function kv(a){ return '<div class="kv"><span>'+esc(a[0])+'</span><span>'+esc(a[1] || '—')+'</span></div>'; }
 
-function formHtml(){
+function formHtml(sys){
   const d = S.draft;
   const mus = T('musteriler').filter(aktif), tip = T('nesne-tipleri').filter(aktif), tur = T('emir-turleri').filter(aktif), onc = T('oncelikler').filter(aktif).sort((a,b)=>(+a['Sıra'])-(+b['Sıra']));
   const curTur = turOf(d.tur || (tur[0]||{}).Kod), yaz = curTur['Yazma izni'] === 'Evet';
@@ -361,12 +441,12 @@ function formHtml(){
   const opt = (arr, val, lab, cur) => arr.map(x => '<option value="'+esc(val(x))+'"'+(cur===val(x)?' selected':'')+'>'+esc(lab(x))+'</option>').join('');
   return '<div class="card" style="display:flex;flex-direction:column;gap:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="font-size:18px">Yeni iş emri</h2><span class="muted" style="font-size:12px">Emir no otomatik verilir</span></div>' +
     '<div class="grid2">' +
-    '<label class="f">Müşteri / Sistem<select class="in" data-d="mus">'+opt(mus, m=>m['Müşteri'], m=>m['Müşteri']+' · '+m.SID+' / '+m.Client, d.mus)+'</select></label>' +
+    '<label class="f">Müşteri / Sistem<select class="in" data-d="mus"'+(sys?' disabled':'')+'>'+opt(mus, m=>m['Müşteri'], m=>m['Müşteri']+' · '+m.SID+' / '+m.Client, d.mus)+'</select></label>' +
     '<label class="f">Nesne tipi<select class="in" data-d="tip">'+opt(tip, t=>t.Kod, t=>t['Açıklama'], d.tip)+'</select></label>' +
-    '<label class="f">Nesne adı<input class="in mono" data-d="nesne" value="'+esc(d.nesne||'')+'" placeholder="ZOA_DENEME" style="text-transform:uppercase"></label>' +
+    '<label class="f">Nesne adı<input class="in mono" id="f-nesne" data-d="nesne" value="'+esc(d.nesne||'')+'" placeholder="ZOA_DENEME" style="text-transform:uppercase"></label>' +
     '<label class="f">Emir türü<select class="in" data-d="tur" data-rerender="1">'+opt(tur, t=>t.Kod, t=>t['Açıklama'], d.tur)+'</select></label>' +
-    '</div><label class="f">Talimat<textarea class="in" rows="3" data-d="talimat" placeholder="Ne yapılmasını istiyorsun?">'+esc(d.talimat||'')+'</textarea></label>' +
-    '<div class="grid2"><label class="f">Beklenen çıktı<input class="in" data-d="cikti" value="'+esc(d.cikti||'')+'" placeholder="Örn. paket adı + kaynak kod"></label>' +
+    '</div><label class="f">Talimat<textarea class="in" rows="3" id="f-talimat" data-d="talimat" placeholder="Ne yapılmasını istiyorsun?">'+esc(d.talimat||'')+'</textarea></label>' +
+    '<div class="grid2"><label class="f">Beklenen çıktı<input class="in" id="f-cikti" data-d="cikti" value="'+esc(d.cikti||'')+'" placeholder="Örn. paket adı + kaynak kod"></label>' +
     '<label class="f">Öncelik<select class="in" data-d="onc">'+opt(onc, o=>o.Kod, o=>o['Açıklama'], d.onc || (onc.find(o=>o.Kod==='NORMAL')||{}).Kod)+'</select></label>' +
     '<label class="f">Son tarih (isteğe bağlı)<input class="in" type="datetime-local" data-d="son" value="'+esc(d.son||'')+'"></label>' +
     (yaz ? '<label class="f">Request tercihi<select class="in" data-d="req">'+opt(req, r=>r['Açıklama'], r=>r['Açıklama'], d.req)+'</select></label>' : '<div></div>') + '</div>' +
@@ -392,15 +472,15 @@ function tanimlarHtml(){
 }
 
 // ---------- Aksiyonlar ----------
-async function writeTanim(msg){
-  const n = S.tab, raw = S.tanimRaw[n];
+async function writeTanim(n, msg){
+  const raw = S.tanimRaw[n];
   await putFile('tanimlar/' + n + '.md', tanimMd(S.tanim[n]), 'Tanım: ' + n + ' – ' + msg, raw && raw.sha);
   toast('Kaydedildi'); S.editRow = -1; await sync(true);
 }
-async function submitOrder(){
+async function submitOrder(sys){
   const d = S.draft, btn = document.getElementById('submitbtn');
-  const mus = T('musteriler').find(m => m['Müşteri'] === d.mus), tip = T('nesne-tipleri').find(t => t.Kod === d.tip), tur = turOf(d.tur);
-  if (!mus || !tip || !tur.Kod) return toast('Müşteri, nesne tipi ve emir türü seçilmeli', true);
+  const mus = musOf(sys || d.mus), tip = T('nesne-tipleri').find(t => t.Kod === d.tip), tur = turOf(d.tur);
+  if (!mus['Müşteri'] || !tip || !tur.Kod) return toast('Müşteri, nesne tipi ve emir türü seçilmeli', true);
   if (!(d.nesne||'').trim() || !(d.talimat||'').trim()) return toast('Nesne adı ve talimat zorunlu', true);
   btn.disabled = true;
   try {
@@ -419,10 +499,25 @@ async function setOnay(v){
   const o = S.orders.find(x => x.id === S.sel); if (!o) return;
   try {
     const md = await blobText(o.path, o.sha);
-    const nmd = md.replace(/^\|\s*Onay\s*\|.*\|\s*$/m, '| Onay | ' + v + ' |');
-    await putFile(o.path, nmd, o.id + ': Onay ' + v, o.sha);
+    await putFile(o.path, md.replace(/^\|\s*Onay\s*\|.*\|\s*$/m, '| Onay | ' + v + ' |'), o.id + ': Onay ' + v, o.sha);
     toast(o.id + ': Onay ' + v); await sync(true);
   } catch (e) { toast(e.message, true); }
+}
+async function addNote(k){
+  const ta = document.getElementById('note-' + k), text = (ta && ta.value || '').trim().replace(/\s*\n\s*/g, ' ');
+  if (!text) return;
+  try {
+    await sync(true);
+    const raw = S.notesRaw[k], cur = raw ? await blobText(raw.path, raw.sha) : '# Notlar: ' + k + '\n\n';
+    await putFile('notlar/' + k + '.md', cur.replace(/\n*$/, '\n') + '- ' + now() + ' · ' + text + '\n', 'Not: ' + k, raw && raw.sha);
+    S.nd[k] = ''; toast('Not eklendi'); await sync(true);
+  } catch (e) { toast(e.message, true); }
+}
+async function setSistem(n, key, val, msg){
+  const row = T('musteriler').find(x => x['Müşteri'] === n); if (!row) return;
+  const t = S.tanim.musteriler; if (!t.head.includes(key)) t.head.splice(t.head.indexOf('Aktif') >= 0 ? t.head.indexOf('Aktif') : t.head.length, 0, key);
+  row[key] = val;
+  try { await writeTanim('musteriler', n + ' ' + msg); } catch (e) { toast(e.message, true); await sync(true); }
 }
 async function showEk(p, sha){
   try {
@@ -431,41 +526,59 @@ async function showEk(p, sha){
   } catch (e) { toast(e.message, true); }
 }
 
+const curSys = () => S.view.startsWith('sys:') ? S.view.slice(4) : null;
 document.addEventListener('click', async ev => {
   const el = ev.target.closest('[data-a]'); if (!el) return;
   const a = el.dataset.a;
   if (a === 'close') { if (ev.target === el || el.tagName === 'BUTTON') document.getElementById('modal').innerHTML = ''; return; }
   if (a === 'copy') { try { await navigator.clipboard.writeText(document.getElementById('ektext').textContent); toast('Kopyalandı'); } catch(e){ toast('Kopyalanamadı', true); } return; }
-  if (a === 'view') { S.view = el.dataset.v; S.editRow = -1; render(); }
+  if (a === 'view') { S.view = el.dataset.v; save('ailife_view', S.view); S.editRow = -1; S.form = false; S.sel = null; render(); window.scrollTo(0,0); }
   else if (a === 'refresh') sync(true);
   else if (a === 'settings') { if (S.token && !window.__confirmTok) { window.__confirmTok = 1; toast('Token’ı silmek için tekrar tıkla'); setTimeout(()=>window.__confirmTok=0, 4000); return; } save('ailife_token', null); S.token=''; S.head=null; render(); }
   else if (a === 'savetok') { const v = document.getElementById('tok').value.trim(); if (!v) return; S.token = v; save('ailife_token', v); render(); await sync(true); }
   else if (a === 'sel') { S.sel = el.dataset.id; S.form = false; render(); }
-  else if (a === 'new') { const tur = T('emir-turleri').filter(aktif); S.draft = { mus: (T('musteriler').filter(aktif)[0]||{})['Müşteri'], tip: (T('nesne-tipleri').filter(aktif)[0]||{}).Kod, tur: (tur[0]||{}).Kod }; S.form = true; render(); }
+  else if (a === 'new') { const tur = T('emir-turleri').filter(aktif); S.draft = { mus: curSys() || (T('musteriler').filter(aktif)[0]||{})['Müşteri'], tip: (T('nesne-tipleri').filter(aktif)[0]||{}).Kod, tur: (tur[0]||{}).Kod }; S.form = true; render(); }
   else if (a === 'cancel') { S.form = false; render(); }
-  else if (a === 'submit') submitOrder();
+  else if (a === 'submit') submitOrder(curSys());
   else if (a === 'onay') { el.disabled = true; setOnay(el.dataset.v); }
   else if (a === 'ek') showEk(el.dataset.p, el.dataset.s);
+  else if (a === 'addnote') { el.disabled = true; await addNote(el.dataset.k); }
+  else if (a === 'fdurum') { const v = el.dataset.v, l = S.f.durum; S.f.durum = l.includes(v) ? l.filter(x => x !== v) : l.concat([v]); render(); }
+  else if (a === 'fclear') { S.f = { q: '', durum: [], mus: '', tur: '' }; render(); }
+  else if (a === 'ytog') { const n = curSys(), acik = musOf(n)['Yürütücü'] !== 'Kapalı'; el.disabled = true; await setSistem(n, 'Yürütücü', acik ? 'Kapalı' : 'Açık', 'yürütücü ' + (acik ? 'kapatıldı' : 'açıldı')); }
   else if (a === 'tab') { S.tab = el.dataset.v; S.editRow = -1; render(); }
-  else if (a === 'tog') { const o = S.tanim[S.tab].data[+el.dataset.i]; o.Aktif = aktif(o) ? 'Hayır' : 'Evet'; el.disabled = true; try { await writeTanim((o.Kod||o['Müşteri']) + ' ' + (o.Aktif==='Evet'?'aktif':'pasif')); } catch(e){ toast(e.message,true); await sync(true); } }
+  else if (a === 'tog') { const o = S.tanim[S.tab].data[+el.dataset.i]; o.Aktif = aktif(o) ? 'Hayır' : 'Evet'; el.disabled = true; try { await writeTanim(S.tab, (o.Kod||o['Müşteri']) + ' ' + (o.Aktif==='Evet'?'aktif':'pasif')); } catch(e){ toast(e.message,true); await sync(true); } }
   else if (a === 'editrow') { S.editRow = +el.dataset.i; render(); }
-  else if (a === 'saverow') { const o = S.tanim[S.tab].data[+el.dataset.i]; document.querySelectorAll('[data-e]').forEach(i => o[i.dataset.e] = i.value.trim()); try { await writeTanim('satır güncellendi'); } catch(e){ toast(e.message,true); await sync(true); } }
+  else if (a === 'saverow') { const o = S.tanim[S.tab].data[+el.dataset.i]; document.querySelectorAll('[data-e]').forEach(i => o[i.dataset.e] = i.value.trim()); try { await writeTanim(S.tab, 'satır güncellendi'); } catch(e){ toast(e.message,true); await sync(true); } }
   else if (a === 'addrow') {
     const t = S.tanim[S.tab], o = {}; let ok = true;
     document.querySelectorAll('[data-n]').forEach((i,j) => { o[i.dataset.n] = i.value.trim() || '—'; if (j===0 && !i.value.trim()) ok = false; });
     if (!ok) return toast('İlk alan zorunlu', true);
     if (t.head.includes('Aktif')) o.Aktif = 'Evet';
-    t.data.push(o); try { await writeTanim('değer eklendi'); } catch(e){ toast(e.message,true); await sync(true); }
+    t.data.push(o); try { await writeTanim(S.tab, 'değer eklendi'); } catch(e){ toast(e.message,true); await sync(true); }
   }
 });
-document.addEventListener('input', ev => { const k = ev.target.dataset && ev.target.dataset.d; if (k) S.draft[k] = ev.target.value; });
-document.addEventListener('change', ev => { const t = ev.target; if (t.dataset && t.dataset.d) { S.draft[t.dataset.d] = t.value; if (t.dataset.rerender) render(); } });
+document.addEventListener('input', ev => {
+  const t = ev.target, k = t.dataset && t.dataset.d;
+  if (k) S.draft[k] = t.value;
+  if (t.dataset && t.dataset.nk) S.nd[t.dataset.nk] = t.value;
+  if (t.dataset && t.dataset.fq) { S.f.q = t.value; render(); }
+});
+document.addEventListener('change', async ev => {
+  const t = ev.target;
+  if (t.id === 'syncsel') { S.sync = parseInt(t.value, 10); save('ailife_sync', String(S.sync)); armTimer(); if (S.last) setSync('ok'); return; }
+  if (t.dataset && t.dataset.d) { S.draft[t.dataset.d] = t.value; if (t.dataset.rerender) render(); }
+  if (t.dataset && t.dataset.ff) { S.f[t.dataset.ff] = t.value; render(); }
+  if (t.dataset && t.dataset.a2 === 'aralik') { t.disabled = true; await setSistem(curSys(), 'Aralık (sn)', t.value, 'kontrol aralığı ' + t.value + ' sn'); }
+});
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape') document.getElementById('modal').innerHTML = ''; if (ev.key === 'Enter' && ev.target.id === 'tok') document.querySelector('[data-a=savetok]').click(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.sync > 0) sync(false); });
 
+document.getElementById('syncsel').value = String(S.sync);
+if (!document.getElementById('syncsel').value) document.getElementById('syncsel').value = '30';
 render();
 if (S.token) sync(true);
-setInterval(() => { if (!document.hidden) sync(false); }, POLL_MS);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(false); });
+armTimer();
 </script>
 </body>
 </html>
